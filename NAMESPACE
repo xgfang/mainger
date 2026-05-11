@@ -1,0 +1,49 @@
+# Main function
+export(mainger)
+
+# Estimators
+export(est_full)
+export(est_partial)
+export(est_restricted)
+export(est_ridge)
+export(est_eb)
+export(est_js_plus)
+
+# Tuning
+export(eta_bound_partial)
+export(eta_bound_full)
+export(eta_optimal_partial)
+export(tune_eaic)
+export(tune_cv)
+export(make_eta_grid)
+
+# Diagnostics (updated: concordance + spectral advantage)
+export(spectral_condition_ratio)
+export(spectral_advantage)
+export(check_concordance)
+export(estimate_direction_biases)
+export(decompose_bound)
+export(diagnose)
+
+# Transforms
+export(zero_pad)
+export(regression_impute)
+
+# S3 methods
+S3method(plot, mainger)
+S3method(summary, mainger)
+S3method(print, mainger)
+S3method(predict, mainger)
+
+# Imports
+importFrom(MASS, ginv)
+importFrom(glmnet, cv.glmnet)
+importFrom(stats, coef, predict, rnorm, sd, quantile, median)
+importFrom(utils, head)
+
+# Imports for Rcpp / RcppArmadillo (used via LinkingTo for the C++ code in
+# src/fast_linalg.cpp; the importFrom anchors are required so the
+# namespace can load).
+importFrom(Rcpp, evalCpp)
+importFrom(RcppArmadillo, armadillo_version)
+useDynLib(mainger, .registration = TRUE)

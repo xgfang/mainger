@@ -1,0 +1,28 @@
+Package: mainger
+Title: Mahalanobis-Integrated Regression Under Privacy Constraints
+Version: 0.2.0
+Authors@R: c(
+    person("Anonymous", "Author", role = c("aut", "cre"),
+           email = "anonymous@example.com"))
+Description: A unified framework for integrating external summary statistics into
+    internal regression models under three data-sharing scenarios (full, partial,
+    restricted). Provides closed-form estimators, theoretical bounds on the
+    beneficial tuning range, data-adaptive tuning via cross-validation and
+    extended AIC, and diagnostics for assessing the privacy-precision trade-off.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Imports:
+    MASS,
+    glmnet,
+    Rcpp,
+    RcppArmadillo
+Suggests:
+    ggplot2,
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown
+LinkingTo: Rcpp, RcppArmadillo
+VignetteBuilder: knitr
+Config/testthat/edition: 3
+Config/roxygen2/version: 8.0.0

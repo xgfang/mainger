@@ -1,0 +1,217 @@
+---
+title: "Getting Started with mainger"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started with mainger}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse  = TRUE,
+  comment   = "#>",
+  fig.width = 7,
+  fig.height = 4.5
+)
+set.seed(2026)
+```
+
+## Overview
+
+The `mainger` package provides a unified interface for integrating external
+summary statistics into an internal regression model under varying data-sharing
+constraints. The package implements the Mahalanobis-integrated estimator and
+its closed-form variants across three sharing regimes:
+
+| Regime       | Internal access            | External access                         |
+|--------------|----------------------------|------------------------------------------|
+| Full         | $(X_1, Y_1)$               | $\hat\theta$ and $\hat\Sigma_2$          |
+| Partial      | $(X_1, Y_1)$               | $\hat\theta$ only                        |
+| Restricted   | $r_1 = X_1^\top Y_1 / n_1$ | $\hat\theta$ and a reference $\Sigma_{\mathrm{ref}}$ |
+
+The same top-level function `mainger()` handles all three; the regime is inferred
+from which inputs you supply. The package then computes a theoretical bound on
+the tuning parameter $\eta$, selects $\eta$ by cross-validation (full and partial)
+or extended AIC (restricted), and returns an integrated coefficient vector with
+diagnostics.
+
+This vignette walks through one example per regime on simulated data.
+
+```{r load}
+library(mainger)
+```
+
+## A common data-generating setup
+
+We use the same internal design across all three examples so the regimes can be
+compared at fixed sample size and noise level. The internal cohort is small
+(`n_int = 80`) with `p = 20` predictors and a sparse true coefficient
+(five active variables).
+
+```{r dgp}
+n_int <- 80; n_ext <- 5000; p <- 20
+
+X_int <- matrix(rnorm(n_int * p), n_int, p)
+colnames(X_int) <- paste0("X", seq_len(p))
+beta_true <- c(rep(0.5, 5), rep(0, p - 5))
+Y_int <- as.numeric(X_int %*% beta_true + rnorm(n_int, 0, 1))
+
+# External cohort with mild coefficient heterogeneity
+beta_ext_true <- beta_true + rnorm(p, 0, 0.05)
+X_ext <- matrix(rnorm(n_ext * p), n_ext, p)
+Y_ext <- as.numeric(X_ext %*% beta_ext_true + rnorm(n_ext, 0, 1))
+
+# External summary: coefficient and Gram matrix
+theta_ext <- as.numeric(solve(crossprod(X_ext), crossprod(X_ext, Y_ext)))
+Sigma_ext <- crossprod(X_ext) / n_ext
+```
+
+## Example 1: Partial sharing
+
+The most common scenario in clinical research: the external collaborator
+shares a fitted coefficient vector but not their Gram matrix. Pass `X_int`,
+`Y_int`, and `beta_ext`:
+
+```{r partial-fit}
+fit_partial <- mainger(X_int = X_int, Y_int = Y_int, beta_ext = theta_ext)
+fit_partial
+```
+
+The package detects the **partial** regime automatically (because no external
+Gram matrix was supplied), computes the theoretical bound on $\eta$, builds
+a search grid bounded by `1.5 * eta_bound`, and selects $\eta$ via 5-fold
+cross-validation.
+
+```{r partial-summary}
+summary(fit_partial)
+```
+
+Inspect the integrated coefficients and compare against the internal-only
+baseline:
+
+```{r partial-coef}
+internal_only <- as.numeric(solve(crossprod(X_int), crossprod(X_int, Y_int)))
+
+data.frame(
+  variable   = colnames(X_int),
+  truth      = beta_true,
+  internal   = round(internal_only, 3),
+  external   = round(theta_ext, 3),
+  integrated = round(fit_partial$coefficients, 3)
+)[1:10, ]
+```
+
+A held-out test set lets us verify the integrated estimator has lower
+prediction error than the internal-only fit:
+
+```{r partial-test}
+X_test <- matrix(rnorm(2000 * p), 2000, p)
+Y_test <- as.numeric(X_test %*% beta_true + rnorm(2000, 0, 1))
+
+mspe <- function(beta) mean((Y_test - X_test %*% beta)^2)
+c(internal   = mspe(internal_only),
+  external   = mspe(theta_ext),
+  integrated = mspe(fit_partial$coefficients))
+```
+
+## Example 2: Full sharing
+
+If the external Gram matrix is also available, the integrated estimator
+uses a matrix-weighted combination rather than a scalar-weighted one. Pass
+`Sigma_ext` in addition:
+
+```{r full-fit}
+fit_full <- mainger(X_int = X_int, Y_int = Y_int,
+                    beta_ext = theta_ext, Sigma_ext = Sigma_ext,
+                    sigma2_ext = 1, n_ext = n_ext)
+fit_full
+```
+
+The full regime in addition to selecting $\eta$ reports a **concordance**
+check: whether the eigenstructure of $\Sigma_{\mathrm{int}}^{-1}\Sigma_{\mathrm{ext}}$
+favors full sharing or partial sharing at the selected $\eta$. The check is
+the empirical realization of Proposition 2 in the accompanying paper.
+
+```{r full-concordance}
+fit_full$concordance
+```
+
+A negative `advantage_at_eta` means partial sharing outperforms full sharing
+at the selected $\eta$; positive means full sharing wins. The package will
+recommend the better regime automatically when they disagree:
+
+```{r full-diagnose, eval = FALSE}
+diagnose(fit_full)
+```
+
+## Example 3: Restricted sharing
+
+When individual-level internal data cannot be shared (genomics, federated
+analysis), only marginal correlations $r_1 = X_1^\top Y_1 / n_1$ and a
+reference covariance $\Sigma_{\mathrm{ref}}$ are available. Pass these
+instead of `X_int` and `Y_int`:
+
+```{r restricted-setup}
+# Simulate the restricted-access scenario from the same internal cohort
+r_int     <- as.numeric(crossprod(X_int, Y_int)) / n_int
+Sigma_ref <- crossprod(X_int) / n_int  # Reference panel; could be a public panel
+```
+
+```{r restricted-fit}
+fit_restricted <- mainger(r_int = r_int, Sigma_ref = Sigma_ref,
+                          beta_ext = theta_ext,
+                          n_int = n_int, sigma2_int = 1)
+fit_restricted
+```
+
+The restricted regime uses extended AIC instead of cross-validation because
+held-out folds cannot be constructed without individual data.
+
+## Diagnostics and the tuning grid
+
+For any regime, the diagnostics surface the search behavior:
+
+```{r diagnostics}
+fit_partial$eta            # Selected eta
+fit_partial$eta_bound      # Theoretical upper bound used for the grid
+fit_partial$eta_grid       # Full search grid
+```
+
+The selected $\eta$ is bounded above by `1.5 * eta_bound` in normal cases;
+when the bound is degenerate (zero or undefined), the package falls back
+to a fixed `[0, 5]` grid. See `?eta_bound_partial` for the bound formula.
+
+## S3 methods
+
+Standard `predict`, `summary`, `plot`, and `coef` methods are available:
+
+```{r methods, eval = FALSE}
+predict(fit_partial, newdata = X_test)
+plot(fit_partial)                          # eta-vs-objective curve
+plot(fit_full,    type = "advantage")      # Full-vs-Partial concordance plot
+coef(fit_restricted)
+```
+
+## Reproducibility
+
+All three examples above use `cv_seed = NULL` (random folds). To produce
+bit-identical results across runs, pass `cv_seed`:
+
+```{r cvseed, eval = FALSE}
+fit_partial <- mainger(X_int = X_int, Y_int = Y_int, beta_ext = theta_ext,
+                       tuning = "cv", cv_seed = 548)
+```
+
+The same seed is used throughout the package for cross-validation, allowing
+the integration result to be reproduced across machines.
+
+## Next steps
+
+- `?mainger` documents every argument and return field.
+- `?eta_bound_partial` and `?eta_bound_full` describe the theoretical
+  bounds used to construct the search grid.
+- `?check_concordance` and `?spectral_advantage` describe the diagnostics
+  used in the full-sharing regime.
+- The package's NEWS.md file (`news(package = "mainger")`) describes the
+  Proposition 2 correction in version 0.2.0.
