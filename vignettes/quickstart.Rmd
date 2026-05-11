@@ -213,5 +213,3 @@ the integration result to be reproduced across machines.
   bounds used to construct the search grid.
 - `?check_concordance` and `?spectral_advantage` describe the diagnostics
   used in the full-sharing regime.
-- The package's NEWS.md file (`news(package = "mainger")`) describes the
-  Proposition 2 correction in version 0.2.0.
